@@ -1,83 +1,87 @@
 import org.json.JSONObject;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.math.BigDecimal;
+import org.json.JSONTokener;
+
+import java.io.FileInputStream;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ShamirSecretSharing {
 
+    public static void main(String[] args) {
+        try {
+            // Parse the JSON data from a file
+            JSONObject jsonObject = new JSONObject(new JSONTokener(new FileInputStream("testcase1.json")));
+
+            // Read 'n' and 'k' values
+            JSONObject keys = jsonObject.getJSONObject("keys");
+            int n = keys.getInt("n");
+            int k = keys.getInt("k");
+
+            // Prepare to store the decoded points
+            List<Point> points = new ArrayList<>();
+
+            // Loop through the root entries and decode each one
+            for (String key : jsonObject.keySet()) {
+                if (!key.equals("keys")) {
+                    int x = Integer.parseInt(key);
+                    JSONObject rootData = jsonObject.getJSONObject(key);
+
+                    // Decode y value from the specified base
+                    int base = rootData.getInt("base");
+                    String value = rootData.getString("value");
+                    BigInteger y = new BigInteger(value, base);
+
+                    // Add the point to the list
+                    points.add(new Point(x, y));
+                }
+            }
+
+            // Calculate the constant term 'c' using Lagrange interpolation
+            BigInteger constantTerm = calculateConstantTerm(points, k);
+            System.out.println("The constant term (secret) is: " + constantTerm);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // A helper class to store points (x, y)
     static class Point {
         int x;
-        BigDecimal y;
+        BigInteger y;
 
-        Point(int x, BigDecimal y) {
+        public Point(int x, BigInteger y) {
             this.x = x;
             this.y = y;
         }
     }
 
-    public static void main(String[] args) {
-        String filePath = "testcase.json";
-        try {
-            JSONObject jsonObject = new JSONObject(new String(Files.readAllBytes(Paths.get(filePath))));
-            int n = jsonObject.getJSONObject("keys").getInt("n");
-            int k = jsonObject.getJSONObject("keys").getInt("k");
+    /**
+     * Calculate the constant term of the polynomial using Lagrange interpolation.
+     *
+     * @param points The list of points (x, y) used in interpolation.
+     * @param k The minimum number of points required.
+     * @return The constant term 'c' of the polynomial.
+     */
+    public static BigInteger calculateConstantTerm(List<Point> points, int k) {
+        BigInteger result = BigInteger.ZERO;
 
-            // Parse points
-            List<Point> points = parsePoints(jsonObject);
+        // Perform Lagrange interpolation at x = 0 to find the constant term
+        for (int i = 0; i < k; i++) {
+            BigInteger term = points.get(i).y;
+            for (int j = 0; j < k; j++) {
+                if (i != j) {
+                    int xi = points.get(i).x;
+                    int xj = points.get(j).x;
 
-            // Ensure we have enough points
-            if (points.size() < k) {
-                throw new IllegalArgumentException("Not enough points to solve the polynomial");
-            }
-
-            // Calculate the constant term (f(0)) using Lagrange Interpolation
-            BigDecimal secretConstant = lagrangeInterpolation(points.subList(0, k), BigDecimal.ZERO);
-            System.out.println("The secret constant term is: " + secretConstant);
-
-        } catch (IOException e) {
-            System.err.println("Error reading file: " + e.getMessage());
-        }
-    }
-
-    // Parse points from JSON data
-    private static List<Point> parsePoints(JSONObject jsonObject) {
-        List<Point> points = new ArrayList<>();
-        for (String key : jsonObject.keySet()) {
-            if (!key.equals("keys")) {
-                int x = Integer.parseInt(key);
-                JSONObject pointData = jsonObject.getJSONObject(key);
-                int base = pointData.getInt("base");
-                String value = pointData.getString("value");
-
-                // Decode y value from specified base
-                BigDecimal y = new BigDecimal(Long.parseLong(value, base));
-                points.add(new Point(x, y));
-            }
-        }
-        return points;
-    }
-
-    // Lagrange Interpolation method
-    private static BigDecimal lagrangeInterpolation(List<Point> points, BigDecimal xValue) {
-        BigDecimal result = BigDecimal.ZERO;
-
-        for (int j = 0; j < points.size(); j++) {
-            Point pj = points.get(j);
-            BigDecimal lj = pj.y;
-
-            for (int m = 0; m < points.size(); m++) {
-                if (m != j) {
-                    Point pm = points.get(m);
-                    BigDecimal numerator = xValue.subtract(BigDecimal.valueOf(pm.x));
-                    BigDecimal denominator = BigDecimal.valueOf(pj.x).subtract(BigDecimal.valueOf(pm.x));
-                    lj = lj.multiply(numerator.divide(denominator, BigDecimal.ROUND_HALF_UP));
+                    term = term.multiply(BigInteger.valueOf(-xj))
+                                .divide(BigInteger.valueOf(xi - xj));
                 }
             }
-            result = result.add(lj);
+            result = result.add(term);
         }
+
         return result;
     }
 }
